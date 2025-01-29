@@ -1,13 +1,11 @@
 import modal
 import os
+from pathlib import Path
+import secrets
+import subprocess
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-import secrets
-from pathlib import Path
-import vllm.entrypoints.openai.api_server as api_server
-from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.engine.async_llm_engine import AsyncLLMEngine
 
 app = modal.App("deepseek-r1-openai-interface")
 
@@ -29,11 +27,11 @@ CUDA_TAG = f"{CUDA_VERSION}-{CUDA_FLAVOR}-{OS_VERSION}"
 # Container image configuration
 image = (
     modal.Image.from_registry(f"nvidia/cuda:{CUDA_TAG}", add_python="3.12")
-    .pip_install(
-        "vllm==0.6.3post1",
-        "fastapi[standard]==0.115.4",
-        "huggingface_hub[hf_transfer]"
+    .apt_install("git", "build-essential", "cmake", "curl", "libcurl4-openssl-dev")
+    .run_commands(
+        "CMAKE_ARGS='-DGGML_CUDA=ON' pip install 'llama-cpp-python[server]'"
     )
+    .pip_install("huggingface_hub[hf_transfer]")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
     .entrypoint([])
 )
@@ -75,6 +73,22 @@ TOKEN = generate_token()
 def serve():
     volume.reload()  # ensure we have the latest version of the weights
     
+    # Start llama.cpp server with our configuration
+    model_path = str(Path(MODELS_DIR) / MODEL_NAME)
+    server_args = [
+        "python", "-m", "llama_cpp.server",
+        "--model", model_path,
+        "--host", "0.0.0.0",
+        "--port", "8000",
+        "--n_gpu_layers", "-1",  # Use all GPU layers
+        "--n_ctx", "8192",
+        "--chat_format", "chatml",
+        "--n_threads", "12"
+    ]
+    
+    process = subprocess.Popen(server_args)
+    
+    # Create FastAPI app for authentication wrapper
     web_app = FastAPI(
         title="DeepSeek-R1 OpenAI-compatible API",
         description="OpenAI-compatible API for DeepSeek-R1 running on Modal",
@@ -106,44 +120,31 @@ def serve():
             )
         return {"username": "authenticated_user"}
 
-    # Add authentication to all routes
-    router = FastAPI(dependencies=[Depends(is_authenticated)])
-    router.include_router(api_server.router)
-    web_app.include_router(router)
-
-    # Configure vLLM engine
-    engine_args = AsyncEngineArgs(
-        model=str(Path(MODELS_DIR) / MODEL_NAME),
-        tensor_parallel_size=4,  # Use all 4 GPUs
-        gpu_memory_utilization=0.90,
-        max_model_len=8192,
-        enforce_eager=True,
-    )
-
-    engine = AsyncLLMEngine.from_engine_args(engine_args)
-    model_config = get_model_config(engine)
-
-    # Set up vLLM OpenAI-compatible server
-    api_server.engine = engine
-    api_server.model_config = model_config
+    # Add authentication middleware
+    @web_app.middleware("http")
+    async def auth_middleware(request, call_next):
+        if request.url.path in ["/docs", "/openapi.json"]:
+            return await call_next(request)
+        
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        token = auth_header.split(" ")[1]
+        if token != TOKEN:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        return await call_next(request)
 
     return web_app
-
-def get_model_config(engine):
-    """Get model configuration from engine."""
-    import asyncio
-
-    try:
-        event_loop = asyncio.get_running_loop()
-    except RuntimeError:
-        event_loop = None
-
-    if event_loop is not None and event_loop.is_running():
-        model_config = event_loop.run_until_complete(engine.get_model_config())
-    else:
-        model_config = asyncio.run(engine.get_model_config())
-
-    return model_config
 
 if __name__ == "__main__":
     # Download model if needed
