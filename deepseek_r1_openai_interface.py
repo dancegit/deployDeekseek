@@ -5,6 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 import secrets
 from pathlib import Path
+from llama_cpp import Llama
 
 app = modal.App("deepseek-r1-openai-interface")
 
