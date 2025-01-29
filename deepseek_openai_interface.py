@@ -30,10 +30,10 @@
 # vLLM can be installed with `pip`.
 
 import modal
-import json
+import yaml
 
 vllm_image = modal.Image.debian_slim(python_version="3.12").pip_install(
-    "vllm==0.6.3post1", "fastapi[standard]==0.115.4"
+    "vllm==0.6.3post1", "fastapi[standard]==0.115.4", "pyyaml"
 )
 
 # ## Download the model weights
@@ -116,8 +116,8 @@ def serve():
     volume.reload()  # ensure we have the latest version of the weights
 
     # Load chat template
-    with open('chat_template.json', 'r') as f:
-        chat_template = json.load(f)
+    with open('chat_template.yaml', 'r') as f:
+        chat_template = yaml.safe_load(f)
 
     # create a fastAPI app that uses vLLM's OpenAI-compatible router
     web_app = fastapi.FastAPI(
@@ -180,7 +180,7 @@ def serve():
         engine,
         model_config=model_config,
         base_model_paths=base_model_paths,
-        chat_template=chat_template["messages"],
+        chat_template=chat_template,
         response_role="assistant",
         lora_modules=[],
         prompt_adapters=[],
