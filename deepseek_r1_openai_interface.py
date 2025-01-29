@@ -2,60 +2,60 @@ import modal
 import os
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import Optional
+from fastapi.middleware.cors import CORSMiddleware
 import secrets
 from pathlib import Path
-from llama_cpp import Llama
+import vllm.entrypoints.openai.api_server as api_server
+from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.engine.async_llm_engine import AsyncLLMEngine
 
 app = modal.App("deepseek-r1-openai-interface")
 
-# Define CUDA configuration
+# Model configuration
+MODEL_NAME = "deepseek-ai/deepseek-llm-67b-chat"
+MODEL_REVISION = "a7c09948d9a632c2c840722f519672cd94af885d"
+MODELS_DIR = "/models"
+CACHE_DIR = "/root/.cache"
+
+# Volume setup
+volume = modal.Volume.from_name("deepseek-models", create_if_missing=True)
+
+# CUDA configuration
 CUDA_VERSION = "12.4.0"
 CUDA_FLAVOR = "devel"
 OS_VERSION = "ubuntu22.04"
 CUDA_TAG = f"{CUDA_VERSION}-{CUDA_FLAVOR}-{OS_VERSION}"
 
-# Define the container image with CUDA support
+# Container image configuration
 image = (
     modal.Image.from_registry(f"nvidia/cuda:{CUDA_TAG}", add_python="3.12")
-    .apt_install("git", "build-essential", "cmake", "curl", "libcurl4-openssl-dev")
-    .run_commands("git clone https://github.com/ggerganov/llama.cpp")
-    .run_commands(
-        "cmake llama.cpp -B llama.cpp/build "
-        "-DBUILD_SHARED_LIBS=OFF -DGGML_CUDA=ON -DLLAMA_CURL=ON "
+    .pip_install(
+        "vllm==0.6.3post1",
+        "fastapi[standard]==0.115.4",
+        "huggingface_hub[hf_transfer]"
     )
-    .run_commands(
-        "cmake --build llama.cpp/build --config Release -j --clean-first"
-    )
-    .pip_install("llama-cpp-python[server]", "fastapi", "uvicorn", "huggingface_hub[hf_transfer]")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
     .entrypoint([])
 )
 
-# Model configuration
-MODEL_REPO_ID = "Qwen/Qwen2-0.5B-Instruct-GGUF"
-MODEL_PATTERN = "*q8_0.gguf"
-CACHE_DIR = "/root/.cache/llama.cpp"
-model_cache = modal.Volume.from_name("llamacpp-cache", create_if_missing=True)
-
 @app.function(
     image=image,
-    volumes={CACHE_DIR: model_cache},
+    volumes={MODELS_DIR: volume},
     timeout=30 * 60,  # 30 minutes
 )
 def download_model():
     from huggingface_hub import snapshot_download
     
-    print(f"🦙 downloading model from {MODEL_REPO_ID} if not present")
+    print(f"🦙 downloading model from {MODEL_NAME}")
     
     snapshot_download(
-        repo_id=MODEL_REPO_ID,
-        local_dir=CACHE_DIR,
-        allow_patterns=[MODEL_PATTERN],
+        repo_id=MODEL_NAME,
+        revision=MODEL_REVISION,
+        local_dir=MODELS_DIR,
     )
     
-    model_cache.commit()
-    print("🦙 model loaded")
+    volume.commit()
+    print("🦙 model downloaded and cached")
 
 def generate_token():
     return secrets.token_urlsafe(32)
@@ -65,21 +65,33 @@ TOKEN = generate_token()
 
 @app.function(
     image=image,
-    volumes={CACHE_DIR: model_cache},
-    gpu=modal.gpu.H100(count=1),
+    volumes={MODELS_DIR: volume},
+    gpu=modal.gpu.H100(count=4),  # DeepSeek needs significant GPU memory
     container_idle_timeout=5 * 60,  # 5 minutes
     timeout=24 * 60 * 60,  # 24 hours
     allow_concurrent_inputs=1000,
 )
 @modal.asgi_app()
 def serve():
+    volume.reload()  # ensure we have the latest version of the weights
+    
     web_app = FastAPI(
-        title="DeepSeek-R1 OpenAI-compatible server",
-        description="Run DeepSeek-R1 with an OpenAI-compatible interface on Modal",
+        title="DeepSeek-R1 OpenAI-compatible API",
+        description="OpenAI-compatible API for DeepSeek-R1 running on Modal",
         version="0.0.1",
         docs_url="/docs",
     )
 
+    # Security: CORS middleware for external requests
+    web_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Security: Bearer token authentication
     http_bearer = HTTPBearer(
         scheme_name="Bearer Token",
         description="Authentication token required for access.",
@@ -94,41 +106,49 @@ def serve():
             )
         return {"username": "authenticated_user"}
 
-    @web_app.post("/v1/completions")
-    async def create_completion(prompt: str, max_tokens: int = 100, depends=Depends(is_authenticated)):
-        model_path = str(Path(CACHE_DIR) / MODEL_PATTERN)
-        llm = Llama(
-            model_path=model_path,
-            n_gpu_layers=9999,  # Use all GPU layers
-            n_ctx=8192,  # Increased context window
-            n_threads=12,
-        )
-        
-        output = llm(prompt, max_tokens=max_tokens)
-        return {
-            "id": "cmpl-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-            "object": "text_completion",
-            "created": int(os.time()),
-            "model": MODEL_REPO_ID,
-            "choices": [
-                {
-                    "text": output['choices'][0]['text'],
-                    "index": 0,
-                    "logprobs": None,
-                    "finish_reason": "length"
-                }
-            ],
-            "usage": {
-                "prompt_tokens": len(llm.tokenize(prompt)),
-                "completion_tokens": len(llm.tokenize(output['choices'][0]['text'])),
-                "total_tokens": len(llm.tokenize(prompt)) + len(llm.tokenize(output['choices'][0]['text']))
-            }
-        }
+    # Add authentication to all routes
+    router = FastAPI(dependencies=[Depends(is_authenticated)])
+    router.include_router(api_server.router)
+    web_app.include_router(router)
+
+    # Configure vLLM engine
+    engine_args = AsyncEngineArgs(
+        model=str(Path(MODELS_DIR) / MODEL_NAME),
+        tensor_parallel_size=4,  # Use all 4 GPUs
+        gpu_memory_utilization=0.90,
+        max_model_len=8192,
+        enforce_eager=True,
+    )
+
+    engine = AsyncLLMEngine.from_engine_args(engine_args)
+    model_config = get_model_config(engine)
+
+    # Set up vLLM OpenAI-compatible server
+    api_server.engine = engine
+    api_server.model_config = model_config
 
     return web_app
+
+def get_model_config(engine):
+    """Get model configuration from engine."""
+    import asyncio
+
+    try:
+        event_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        event_loop = None
+
+    if event_loop is not None and event_loop.is_running():
+        model_config = event_loop.run_until_complete(engine.get_model_config())
+    else:
+        model_config = asyncio.run(engine.get_model_config())
+
+    return model_config
 
 if __name__ == "__main__":
     # Download model if needed
     download_model.remote()
-    print(f"Generated authentication token: {TOKEN}")
-    print("Deploy with: modal deploy deepseek_r1_openai_interface.py")
+    print(f"\nGenerated authentication token: {TOKEN}")
+    print("\nTo use this token with OpenAI API clients, set:")
+    print(f"  OPENAI_API_KEY={TOKEN}")
+    print("\nDeploy with: modal deploy deepseek_r1_openai_interface.py")
