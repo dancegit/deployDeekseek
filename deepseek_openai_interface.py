@@ -6,29 +6,27 @@
 # # Run OpenAI-compatible LLM inference with LLaMA 3.1-8B and vLLM
 
 import modal
-import yaml
+import json
 import os
 
-CHAT_TEMPLATE = """
-system_template: "You are Deepseek, an AI assisting with coding tasks using aider."
-roles:
-  system: ""
-  assistant: "Assistant: "
-  user: "Human: "
-messages_template: "{messages}\\n"
-message_template: "{role}{content}\\n"
-response_format: "Assistant: {response}"
-"""
+CHAT_TEMPLATE = """{
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are Grok 2, an AI developed by xAI, assisting with coding tasks using aider. \\n\\nYou should:\\n\\n- Help with code writing, debugging, and understanding.\\n- Use markdown code blocks for all code snippets (` ```python`, etc).\\n- Provide explanations or comments for code when necessary.\\n- Respond with professionalism but keep the tone helpful and slightly humorous.\\n- Acknowledge when files are added or removed from the session.\\n- Use colorized \\"edit blocks\\" to suggest code modifications if possible."
+        }
+    ]
+}"""
 
 # Create a stub file that will be copied into the image
 stub_dir = os.path.dirname(__file__)
-template_path = os.path.join(stub_dir, "chat_template.yaml")
+template_path = os.path.join(stub_dir, "chat_template.json")
 with open(template_path, "w") as f:
     f.write(CHAT_TEMPLATE)
 
 vllm_image = (modal.Image.debian_slim(python_version="3.12")
-    .pip_install("vllm==0.6.3post1", "fastapi[standard]==0.115.4", "pyyaml")
-    .add_local_file(template_path, "/root/chat_template.yaml"))
+    .pip_install("vllm==0.6.3post1", "fastapi[standard]==0.115.4")
+    .add_local_file(template_path, "/root/chat_template.json"))
 
 MODELS_DIR = "/llamas"
 MODEL_NAME = "deepseek-ai/deepseek-coder-33b-instruct"
@@ -73,8 +71,8 @@ def serve():
     volume.reload()  # ensure we have the latest version of the weights
 
     # Load chat template
-    with open('/root/chat_template.yaml', 'r') as f:
-        chat_template = yaml.safe_load(f)
+    with open('/root/chat_template.json', 'r') as f:
+        chat_template = json.load(f)
 
     # create a fastAPI app that uses vLLM's OpenAI-compatible router
     web_app = fastapi.FastAPI(
