@@ -70,9 +70,10 @@ def serve():
 
     volume.reload()  # ensure we have the latest version of the weights
 
-    # Load chat template
+    # Load chat template as JSON directly
     with open('/root/chat_template.json', 'r') as f:
-        chat_template = json.load(f)
+        chat_template_str = f.read()
+        chat_template = json.loads(chat_template_str)
 
     # create a fastAPI app that uses vLLM's OpenAI-compatible router
     web_app = fastapi.FastAPI(
@@ -135,7 +136,7 @@ def serve():
         engine,
         model_config=model_config,
         base_model_paths=base_model_paths,
-        chat_template=chat_template,
+        chat_template=chat_template_str,  # Pass the template string instead of dict
         response_role="assistant",
         lora_modules=[],
         prompt_adapters=[],
