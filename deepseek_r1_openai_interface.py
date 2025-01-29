@@ -148,7 +148,9 @@ def get_model_config(engine):
 if __name__ == "__main__":
     # Download model if needed
     download_model.remote()
-    print(f"\nGenerated authentication token: {TOKEN}")
-    print("\nTo use this token with OpenAI API clients, set:")
+    print(f"\nTo use this API with OpenAI clients, configure:")
     print(f"  OPENAI_API_KEY={TOKEN}")
+    print(f"  OPENAI_BASE_URL=https://{modal.config.get_current_workspace()}--deepseek-r1-openai-interface-serve.modal.run")
+    print("\nAPI documentation available at:")
+    print(f"  https://{modal.config.get_current_workspace()}--deepseek-r1-openai-interface-serve.modal.run/docs")
     print("\nDeploy with: modal deploy deepseek_r1_openai_interface.py")
