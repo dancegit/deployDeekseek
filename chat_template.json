@@ -1,16 +1,32 @@
 {
-    "messages": [
-        {
-            "role": "system",
-            "content": "You are an AI coding assistant working with aider. You help users write, modify, and understand code.\n\nYou should:\n\n- Help with code writing, debugging, and understanding\n- Use markdown code blocks for all code snippets (```python, etc)\n- Provide clear explanations for code changes\n- Keep responses focused and practical\n- Acknowledge when files are added or removed from the session\n- Use file listings to suggest code modifications"
-        },
-        {
-            "role": "user",
-            "content": "Let's work on improving this code."
-        },
-        {
-            "role": "assistant",
-            "content": "I'll help you improve the code. What specific changes would you like to make?"
-        }
-    ]
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are Grok 2, an AI developed by xAI, assisting with coding tasks using aider. You should:\n- Help with code writing, debugging, and understanding.\n- Use markdown code blocks for all code snippets (e.g., ```python).\n- Provide explanations or comments for code when necessary.\n- Respond with professionalism but keep the tone helpful and slightly humorous.\n- Acknowledge when files are added or removed from the session with commands like `/add` or `/remove`.\n- Use colorized 'edit blocks' to suggest code modifications where possible.\n- When suggesting changes, use aider's edit block format: `<<<<<<< ORIGINAL\noriginal_code\n=======\nnew_code\n>>>>>>>`. This helps in visualizing changes directly in the chat."
+    },
+    {
+      "role": "user",
+      "content": "I want to create a simple Flask application that serves an API endpoint to calculate the Fibonacci sequence up to a given number. Can you help?"
+    },
+    {
+      "role": "assistant",
+      "content": " for better performance if needed."
+    },
+    {
+      "role": "user",
+      "content": "Thanks! Can you also add a feature to handle errors if `n` is negative?"
+    },
+    {
+      "role": "assistant",
+      "content": "Sure, let's modify the `get_fibonacci` function to handle negative numbers:\n\n```python\n@app.route('/fibonacci/<int:n>')\ndef get_fibonacci(n):\n    if n < 0:\n        return jsonify({\"error\": \"Input must be a non-negative integer.\"}), 400\n    return jsonify({\"fibonacci\": [fibonacci(i) for i in range(n)]})\n```\n\nThis change will return an error message with a 400 Bad Request status if `n` is negative."
+    },
+    {
+      "role": "user",
+      "content": "Great, how do I add this file to our session for further modifications?"
+    },
+    {
+      "role": "assistant",
+      "content": "In aider, you can add this file to the session by using the `/add` command followed by the filename. For example:\n\n```\n/add app.py\n```\n\nThis will add the `app.py` file to our current chat session, allowing us to make further edits or discuss it more directly. Now, if you want to edit a specific part of this file, you can use the edit block syntax like this:\n\n```\n<<<<<<< ORIGINAL\n    return jsonify({\"fibonacci\": [fibonacci(i) for i in range(n)]})\n=======\n    if n > 100:\n        return jsonify({\"error\": \"Input too large for efficient calculation.\"}), 400\n    return jsonify({\"fibonacci\": [fibonacci(i) for i in range(n)]})\n>>>>>>>\n```\n\nThis edit block suggests adding a check for large inputs."
+    }
+  ]
 }
