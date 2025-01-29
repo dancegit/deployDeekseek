@@ -28,7 +28,7 @@ with open(template_path, "w") as f:
 
 vllm_image = (modal.Image.debian_slim(python_version="3.12")
     .pip_install("vllm==0.6.3post1", "fastapi[standard]==0.115.4", "pyyaml")
-    .copy_local_file(template_path, "/root/chat_template.yaml"))
+    .add_local_file(template_path, "/root/chat_template.yaml"))
 
 MODELS_DIR = "/llamas"
 MODEL_NAME = "deepseek-ai/deepseek-coder-33b-instruct"
