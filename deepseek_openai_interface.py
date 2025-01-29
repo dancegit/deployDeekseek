@@ -14,34 +14,12 @@ CHAT_TEMPLATE = """{
         {
             "role": "system",
             "content": "Act as an expert software developer.\\nTake requests for changes to the supplied code.\\nIf the request is ambiguous, ask questions.\\n\\nAlways reply to the user in {language}.\\n\\n{lazy_prompt}\\nOnce you understand the request you MUST:\\n1. Determine if any code changes are needed.\\n2. Explain any needed changes.\\n3. If changes are needed, output a copy of each file that needs changes.\\n\\nTo suggest changes to a file you MUST return the entire content of the updated file.\\nYou MUST use this *file listing* format:\\n\\npath/to/filename.js\\n```\\n// entire file content ...\\n// ... goes in between\\n```\\n\\nEvery *file listing* MUST use this format:\\n- First line: the filename with any originally provided path; no extra markup, punctuation, comments, etc. **JUST** the filename with path.\\n- Second line: opening ```\\n- ... entire content of the file ...\\n- Final line: closing ```\\n\\nTo suggest changes to a file you MUST return a *file listing* that contains the entire content of the file.\\n*NEVER* skip, omit or elide content from a *file listing* using \\\"...\\\" or by adding comments like \\\"... rest of code...\\\"!\\nCreate a new file you MUST return a *file listing* which includes an appropriate filename, including any appropriate path."
-        },
-        {
-          "role": "assistant",
-          "content": " Act as an expert software developer.
-          Take requests for changes to the supplied code.
-          If the request is ambiguous, ask questions.
-
-          Always reply to the user in english.
-
-          {lazy_prompt}
-          Once you understand the request you MUST:
-          1. Determine if any code changes are needed.
-          2. Explain any needed changes.
-          3. If changes are needed, output a copy of each file that needs changes."
-        },
-
+        }
     ]
 }"""
 
-# Create a stub file that will be copied into the image
-stub_dir = os.path.dirname(__file__)
-template_path = os.path.join(stub_dir, "chat_template.json")
-with open(template_path, "w") as f:
-    f.write(CHAT_TEMPLATE)
-
 vllm_image = (modal.Image.debian_slim(python_version="3.12")
-    .pip_install("vllm==0.6.3post1", "fastapi[standard]==0.115.4")
-    .add_local_file(template_path, "/root/chat_template.json"))
+    .pip_install("vllm==0.6.3post1", "fastapi[standard]==0.115.4"))
 
 MODELS_DIR = "/llamas"
 MODEL_NAME = "deepseek-ai/deepseek-coder-33b-instruct"
@@ -84,11 +62,6 @@ def serve():
     from vllm.usage.usage_lib import UsageContext
 
     volume.reload()  # ensure we have the latest version of the weights
-
-    # Load chat template as JSON directly
-    with open('/root/chat_template.json', 'r') as f:
-        chat_template_str = f.read()
-        chat_template = json.loads(chat_template_str)
 
     # create a fastAPI app that uses vLLM's OpenAI-compatible router
     web_app = fastapi.FastAPI(
@@ -151,7 +124,7 @@ def serve():
         engine,
         model_config=model_config,
         base_model_paths=base_model_paths,
-        chat_template=chat_template_str,  # Pass the template string instead of dict
+        chat_template=CHAT_TEMPLATE,  # Use CHAT_TEMPLATE directly
         response_role="assistant",
         lora_modules=[],
         prompt_adapters=[],
