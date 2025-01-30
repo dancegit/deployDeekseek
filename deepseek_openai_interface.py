@@ -13,7 +13,38 @@ CHAT_TEMPLATE = """{
     "messages": [
         {
             "role": "system",
-            "content": "Act as an expert software developer.\\nTake requests for changes to the supplied code.\\nIf the request is ambiguous, ask questions.\\n\\nAlways reply to the user in {language}.\\n\\n{lazy_prompt}\\nOnce you understand the request you MUST:\\n1. Determine if any code changes are needed.\\n2. Explain any needed changes.\\n3. If changes are needed, output a copy of each file that needs changes.\\n\\nTo suggest changes to a file you MUST return the entire content of the updated file.\\nYou MUST use this *file listing* format:\\n\\npath/to/filename.js\\n```\\n// entire file content ...\\n// ... goes in between\\n```\\n\\nEvery *file listing* MUST use this format:\\n- First line: the filename with any originally provided path; no extra markup, punctuation, comments, etc. **JUST** the filename with path.\\n- Second line: opening ```\\n- ... entire content of the file ...\\n- Final line: closing ```\\n\\nTo suggest changes to a file you MUST return a *file listing* that contains the entire content of the file.\\n*NEVER* skip, omit or elide content from a *file listing* using \\\"...\\\" or by adding comments like \\\"... rest of code...\\\"!\\nCreate a new file you MUST return a *file listing* which includes an appropriate filename, including any appropriate path."
+            "content": "Act as an expert software developer that should: \\n
+                \\n
+                - Help with code writing, debugging, and understanding. \\n
+                - Use markdown code blocks for all code snippets (` ```python`, etc).  \\n
+                - Provide explanations or comments for code when necessary. \\n
+                - Respond with professionalism but keep the tone helpful and slightly humorous. \\n
+                - Acknowledge when files are added or removed from the session. \\n
+                - Use colorized "edit blocks" to suggest code modifications if possible. \\n
+                \\n
+                You MUST:\\n
+                1. Determine if any code changes or text updates are needed.\\n
+                2. Explain any needed changes.\\n
+                3. If changes are needed, output a copy of each file that needs changes.\\n
+                \\n
+                To suggest changes to a file you MUST return the entire content of the updated file.\\n
+                You MUST use this *file listing* format according to this example (but could be any file):\\n
+                \\n
+                path/to/filename.js\\n
+                ```\\n
+                // entire file content ...\\n
+                // ... goes in between\\n
+                ```\\n
+                \\n
+                Every *file listing* MUST use this format:\\n
+                - First line: the filename with any originally provided path; no extra markup, punctuation, comments, etc. **JUST** the filename with path.\\n
+                - Second line: opening ```\\n
+                - ... entire content of the file ...\\n
+                - Final line: closing ```\\n
+                \\n
+                To suggest changes to a file you MUST return a *file listing* that contains the entire content of the file.\\n
+                *NEVER* skip, omit or elide content from a *file listing* using \\\"...\\\" or by adding comments like \\\"... rest of code...\\\"!\\n
+                Create a new file you MUST return a *file listing* which includes an appropriate filename, including any appropriate path."
         }
     ]
 }"""
@@ -22,8 +53,31 @@ vllm_image = (modal.Image.debian_slim(python_version="3.12")
     .pip_install("vllm==0.6.3post1", "fastapi[standard]==0.115.4"))
 
 MODELS_DIR = "/llamas"
-MODEL_NAME = "deepseek-ai/deepseek-coder-33b-instruct"
-MODEL_REVISION = "61dc97b922b13995e7f83b7c8397701dbf9cfd4c"  #the commit hash
+MODEL_NAME="neuralmagic-ent/Llama-3.3-70B-Instruct-quantized.w8a8"
+MODEL_REVISION = "dc36722e6cb1e6b98d0144fd6059933d19c00ebf"
+
+
+#MODEL_NAME="mradermacher/oh-dcft-v3.1-claude-3-5-haiku-20241022-qwen-GGUF"
+#MODEL_REVISION="7a01304dd9537438e6b161b0f03cc4e2d14bd324"
+
+
+#MODEL_NAME = "deepseek-ai/DeepSeek-Coder-V2-Instruct"
+#MODEL_REVISION = "2453c79a2a0947968a054947b53daa598cb3be52"
+#MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Llama-70B"
+#MODEL_REVISION = "1772b078b94935926dcc8715c1afdd04ae447080"
+
+
+#MODEL_NAME = "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
+#MODEL_REVISION = "e434a23f91ba5b4923cf6c9d9a238eb4a08e3a11"
+
+#MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+#MODEL_REVISION = "d66bcfc2f3fd52799f95943264f32ba15ca0003d" #the commit hash
+
+#MODEL_NAME = "deepseek-ai/deepseek-coder-33b-instruct"
+#MODEL_REVISION = "61dc97b922b13995e7f83b7c8397701dbf9cfd4c"  #the commit hash
+
+
+
 
 try:
     volume = modal.Volume.from_name("llamas", create_if_missing=False).hydrate()
@@ -41,8 +95,8 @@ HOURS = 60 * MINUTES
 
 @app.function(
     image=vllm_image,
-    gpu=modal.gpu.H100(count=N_GPU),
-    container_idle_timeout=15, #15 seconds timeout if no request we idle
+    gpu=modal.gpu.A100(count=N_GPU,size="80GB"),  #L40S HAS 48GB , L4 HAS 24GB T4 HAS 16GB,
+    container_idle_timeout=2*MINUTES, #5 seconds timeout if no request we idle to save money
     timeout=1 * HOURS,
     allow_concurrent_inputs=1,
     volumes={MODELS_DIR: volume},
@@ -103,16 +157,40 @@ def serve():
     engine_args = AsyncEngineArgs(
         model=MODELS_DIR + "/" + MODEL_NAME,
         tensor_parallel_size=N_GPU,
-        gpu_memory_utilization=0.95,
+        gpu_memory_utilization=0.90,
         max_model_len=8096,
-        enforce_eager=True,  # False=capture the graph for faster inference, but slower cold starts (30s > 20s)
-    )
+        enforce_eager=False,  # False=capture the graph for faster inference, but slower cold starts (30s > 20s)
+        trust_remote_code=True,  # Add this line to trust remote code
+        quantization="compressed-tensors",  # This might help specify the quantization method
 
+    )
+    os.environ['VLLM_QUANTIZATION'] = 'w8a8'
+    engine_args.quantization_config = {
+        'type': 'w8a8',
+        'method': 'w8a8',
+        'weight_quant': {'num_bits': 8},
+        'input_quant': {'num_bits': 8}
+    }
     engine = AsyncLLMEngine.from_engine_args(
         engine_args, usage_context=UsageContext.OPENAI_API_SERVER
     )
 
     model_config = get_model_config(engine)
+    if not hasattr(model_config, 'quantization_config') or model_config.quantization_config is None:
+        model_config.quantization_config = {
+            'type': 'w8a8',
+            'method': 'w8a8',
+            'weight_quant': {'num_bits': 8},
+            'input_quant': {'num_bits': 8}
+        }
+    else:
+        # If it exists, ensure or update the settings
+        model_config.quantization_config.update({
+            'type': 'w8a8',
+            'method': 'w8a8',
+            'weight_quant': {'num_bits': 8},
+            'input_quant': {'num_bits': 8}
+        })
 
     request_logger = RequestLogger(max_log_len=2048)
 
@@ -124,8 +202,8 @@ def serve():
         engine,
         model_config=model_config,
         base_model_paths=base_model_paths,
-        chat_template=CHAT_TEMPLATE,  # Use CHAT_TEMPLATE directly
-        response_role="assistant",
+        chat_template=None,  # Use CHAT_TEMPLATE directly
+        response_role="system",
         lora_modules=[],
         prompt_adapters=[],
         request_logger=request_logger,
