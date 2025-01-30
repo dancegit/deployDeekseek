@@ -50,7 +50,7 @@ CHAT_TEMPLATE = """{
 }"""
 
 vllm_image = (modal.Image.debian_slim(python_version="3.12")
-    .pip_install("vllm==0.6.3post1", "fastapi[standard]==0.115.4"))
+    .pip_install("nm-vllm==0.6.3post1", "fastapi[standard]==0.115.4"))
 
 MODELS_DIR = "/llamas"
 MODEL_NAME="neuralmagic-ent/Llama-3.3-70B-Instruct-quantized.w8a8"
@@ -104,16 +104,16 @@ HOURS = 60 * MINUTES
 @modal.asgi_app()
 def serve():
     import fastapi
-    import vllm.entrypoints.openai.api_server as api_server
-    from vllm.engine.arg_utils import AsyncEngineArgs
-    from vllm.engine.async_llm_engine import AsyncLLMEngine
-    from vllm.entrypoints.logger import RequestLogger
-    from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
-    from vllm.entrypoints.openai.serving_completion import (
+    import nm_vllm.entrypoints.openai.api_server as api_server
+    from nm_vllm.engine.arg_utils import AsyncEngineArgs
+    from nm_vllm.engine.async_llm_engine import AsyncLLMEngine
+    from nm_vllm.entrypoints.logger import RequestLogger
+    from nm_vllm.entrypoints.openai.serving_chat import OpenAIServingChat
+    from nm_vllm.entrypoints.openai.serving_completion import (
         OpenAIServingCompletion,
     )
-    from vllm.entrypoints.openai.serving_engine import BaseModelPath
-    from vllm.usage.usage_lib import UsageContext
+    from nm_vllm.entrypoints.openai.serving_engine import BaseModelPath
+    from nm_vllm.usage.usage_lib import UsageContext
 
     volume.reload()  # ensure we have the latest version of the weights
 
@@ -161,36 +161,16 @@ def serve():
         max_model_len=8096,
         enforce_eager=False,  # False=capture the graph for faster inference, but slower cold starts (30s > 20s)
         trust_remote_code=True,  # Add this line to trust remote code
-        quantization="compressed-tensors",  # This might help specify the quantization method
-
+        quantization=None,  # nm-vllm will handle this; set to None to avoid conflicts
     )
-    os.environ['VLLM_QUANTIZATION'] = 'w8a8'
-    engine_args.quantization_config = {
-        'type': 'w8a8',
-        'method': 'w8a8',
-        'weight_quant': {'num_bits': 8},
-        'input_quant': {'num_bits': 8}
-    }
+    # Remove the following line as nm-vllm should manage quantization:
+    # os.environ['VLLM_QUANTIZATION'] = 'w8a8'
     engine = AsyncLLMEngine.from_engine_args(
         engine_args, usage_context=UsageContext.OPENAI_API_SERVER
     )
 
     model_config = get_model_config(engine)
-    if not hasattr(model_config, 'quantization_config') or model_config.quantization_config is None:
-        model_config.quantization_config = {
-            'type': 'w8a8',
-            'method': 'w8a8',
-            'weight_quant': {'num_bits': 8},
-            'input_quant': {'num_bits': 8}
-        }
-    else:
-        # If it exists, ensure or update the settings
-        model_config.quantization_config.update({
-            'type': 'w8a8',
-            'method': 'w8a8',
-            'weight_quant': {'num_bits': 8},
-            'input_quant': {'num_bits': 8}
-        })
+    # Here, you don't need to set quantization_config manually
 
     request_logger = RequestLogger(max_log_len=2048)
 
