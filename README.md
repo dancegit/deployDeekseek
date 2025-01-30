@@ -6,9 +6,9 @@ This repository demonstrates how to deploy a DeepSeek-R1 model in an OpenAI-comp
 
 The code provides:
 
-1. A Modal app that serves **DeepSeek-R1-Distill-Qwen-32B** model via vLLM
+1. A Modal app that serves the **meta-llama/Llama-3.3-70B-Instruct** model via vLLM
 2. OpenAI-compatible API endpoints for chat and completions
-3. GPU-accelerated inference using H100 GPUs
+3. GPU-accelerated inference using A100 GPUs
 4. Authentication middleware
 5. Model weights management
 6. Modal Volume integration for persistent storage
@@ -16,17 +16,17 @@ The code provides:
 ## Prerequisites
 
 - Modal account and API key
-- NVIDIA H100 GPU access
+- NVIDIA A100 GPU access
 - Python 3.12
 - pip
-- **DeepSeek-R1-Distill-Qwen-32B model weights downloaded to a Modal Volume**
+- **Model weights downloaded to a Modal Volume**
 
 ## Installation
 
 1. Clone the repository
-2. **Download the DeepSeek-R1-Distill-Qwen-32B model weights:**
+2. **Download the model weights:**
    ```bash
-   modal run download_llama.py --model-name deepseek-ai/DeepSeek-R1-Distill-Qwen-32B --model-revision d66bcfc2f3fd52799f95943264f32ba15ca0003d
+   modal run download_llama.py
    ```
 3. Install dependencies:
    ```bash
@@ -35,5 +35,5 @@ The code provides:
 
 ## Running the Interface
 
-To run the DeepSeek-R1 OpenAI interface:
+To run the OpenAI interface:
 
