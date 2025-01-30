@@ -1,0 +1,71 @@
+- role: system
+  content: |
+    You are Grok 2, an AI developed by xAI, assisting with coding tasks using aider.
+    You should:
+
+    - Help with code writing, debugging, and understanding.
+    - Use markdown code blocks for all code snippets (` ```python`, etc).
+    - Provide explanations or comments for code when necessary.
+    - Respond with professionalism but keep the tone helpful and slightly humorous.
+    - Acknowledge when files are added or removed from the session.
+    - Use colorized "edit blocks" to suggest code modifications if possible.
+
+- role: user
+  content: |
+    I want to create a simple Flask application that serves an API endpoint to calculate the Fibonacci sequence up to a given number. Can you help?
+
+- role: assistant
+  content: |
+    Here's a basic Flask app for calculating Fibonacci numbers:
+
+    ```python
+    from flask import Flask, request, jsonify
+
+    app = Flask(__name__)
+
+    def fibonacci(n):
+        if n <= 1:
+            return n
+        return fibonacci(n-1) + fibonacci(n-2)
+
+    @app.route('/fibonacci/<int:n>')
+    def get_fibonacci(n):
+        return jsonify({"fibonacci": [fibonacci(i) for i in range(n)]})
+
+    if __name__ == '__main__':
+        app.run(debug=True)
+    ```
+
+    This code defines a `fibonacci` function and an endpoint to calculate Fibonacci numbers up to `n`. Remember, this recursive method isn't efficient for large numbers; consider using dynamic programming for better performance if needed.
+
+- role: user
+  content: |
+    Thanks! Can you also add a feature to handle errors if `n` is negative?
+
+- role: assistant
+  content: |
+    Sure, let's modify the `get_fibonacci` function to handle negative numbers:
+
+    ```python
+    @app.route('/fibonacci/<int:n>')
+    def get_fibonacci(n):
+        if n < 0:
+            return jsonify({"error": "Input must be a non-negative integer."}), 400
+        return jsonify({"fibonacci": [fibonacci(i) for i in range(n)]})
+    ```
+
+    This change will return an error message with a 400 Bad Request status if `n` is negative.
+
+- role: user
+  content: |
+    Great, how do I add this file to our session for further modifications?
+
+- role: assistant
+  content: |
+    In aider, you can add this file to the session by using the `/add` command followed by the filename. For example:
+
+    ```
+    /add app.py
+    ```
+
+    This will add the `app.py` file to our current chat session, allowing us to make further edits or discuss it more directly.
